@@ -1,0 +1,22 @@
+[project]
+name = "api_evolution_crew"
+version = "0.1.0"
+description = "Autonomous Agent that audits code using a local MCP server"
+authors = [
+    { name = "Werty Potom", email = "crewai@example.com" }
+]
+dependencies = [
+    "crewai[tools]",
+    "python-dotenv",
+    "mcp",
+    "fastapi>=0.136.0",
+    "uvicorn>=0.44.0",
+    "pydantic>=2.11.10",
+    "pygithub>=2.9.1",
+]
+requires-python = ">=3.10,<3.13"
+
+
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"

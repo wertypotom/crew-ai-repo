@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/api_evolution_crew/crew.py
+src/api_evolution_crew/main.py
+src/api_evolution_crew/server.py
+src/api_evolution_crew/tools.py
+src/api_evolution_crew.egg-info/PKG-INFO
+src/api_evolution_crew.egg-info/SOURCES.txt
+src/api_evolution_crew.egg-info/dependency_links.txt
+src/api_evolution_crew.egg-info/requires.txt
+src/api_evolution_crew.egg-info/top_level.txt
