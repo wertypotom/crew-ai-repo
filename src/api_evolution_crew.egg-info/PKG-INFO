@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: api_evolution_crew
+Version: 0.1.0
+Summary: Autonomous Agent that audits code using a local MCP server
+Author-email: Werty Potom <crewai@example.com>
+Requires-Python: <3.13,>=3.10
+Requires-Dist: crewai[tools]
+Requires-Dist: python-dotenv
+Requires-Dist: mcp
+Requires-Dist: fastapi>=0.136.0
+Requires-Dist: uvicorn>=0.44.0
+Requires-Dist: pydantic>=2.11.10
+Requires-Dist: pygithub>=2.9.1
