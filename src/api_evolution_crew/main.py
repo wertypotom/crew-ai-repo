@@ -20,10 +20,6 @@ def run_repo_audit(target_dir: str, base_branch: str, step_callback=None) -> str
     }
     
     crew_builder = ApiEvolutionCrew()
-    
-    # Inject the dashboard streaming callback
-    if step_callback:
-        crew_builder.custom_step_callback = step_callback
             
     # Execute the crew and return the textual markdown output
     output = crew_builder.crew().kickoff(inputs=inputs)

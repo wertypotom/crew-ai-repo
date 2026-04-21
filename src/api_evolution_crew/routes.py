@@ -20,40 +20,29 @@ def notify_dashboard(data):
     except Exception as e:
         print(f"⚠️ Failed to notify dashboard: {e}")
 
-def create_agent_callback(pr_number):
-    def step_callback(step):
-        try:
-            msg = None
-            
-            # CrewAI wraps Langchain's AgentAction
-            if isinstance(step, list) and len(step) > 0:
-                first = step[0]
-                action = first[0] if isinstance(first, tuple) else first
-            else:
-                action = step
-                
-            if hasattr(action, 'tool') and action.tool and action.tool != "_Exception":
-                msg = f"🔧 Using Tool: {action.tool}"
-            elif hasattr(action, 'thought') and action.thought:
-                msg = f"💭 {action.thought[:150]}..."
-            elif hasattr(action, 'log') and action.log:
-                clean_log = action.log.split("Action:")[0].replace("Thought:", "").strip()
-                msg = f"💭 {clean_log[:150]}..." if clean_log else "💭 Thinking..."
-            elif isinstance(action, str):
-                msg = f"💭 {action[:150]}..."
-            else:
-                str_rep = str(action)
-                msg = f"⚡ {str_rep[:150]}..."
-                
-            if msg:
-                notify_dashboard({
-                    "prNumber": pr_number,
-                    "log": [msg.replace('\n', ' ')]
-                })
-        except Exception as e:
-            print(f"Callback Error: {e}")
-            
-    return step_callback
+import re
+import sys
+
+ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+class DashboardLogCatcher:
+    def __init__(self, pr_number, original_stdout):
+        self.pr_number = pr_number
+        self.original_stdout = original_stdout
+        self.buffer = ""
+
+    def write(self, text):
+        # Always output to the real console so the user still sees it
+        self.original_stdout.write(text)
+        self.original_stdout.flush()
+        
+        # Send the entire chunk as a single log item so multi-line ASCII art isn't broken
+        clean_text = ansi_escape.sub('', text).strip('\r\n')
+        if clean_text:
+            notify_dashboard({"prNumber": self.pr_number, "log": [clean_text]})
+
+    def flush(self):
+        self.original_stdout.flush()
 
 async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_branch, base_branch, head_sha, pr_url, pr_title):
     if pr_number not in pr_locks:
@@ -82,9 +71,17 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
                 subprocess.run(["npm", "install"], cwd=server_path, check=True)
                 subprocess.run(["npm", "run", "generate:docs"], cwd=server_path, check=True)
             
-            # Execute the CrewAI logic with our step_callback
-            callback = create_agent_callback(pr_number)
-            report_markdown = await asyncio.to_thread(run_repo_audit, temp_dir, base_branch, callback)
+            # Intercept stdout to capture 100% of verbose CrewAI logs
+            original_stdout = sys.stdout
+            catcher = DashboardLogCatcher(pr_number, original_stdout)
+            
+            try:
+                sys.stdout = catcher
+                # Execute the CrewAI logic
+                report_markdown = await asyncio.to_thread(run_repo_audit, temp_dir, base_branch)
+            finally:
+                sys.stdout = original_stdout
+                
             print(f"✅ Audit Complete! Markdown length: {len(report_markdown)}")
             
             # Pre-calculate critical status for dashboard and github
