@@ -13,8 +13,8 @@ async def _execute_mcp_tool(tool_name: str, args: dict) -> str:
     env["DOTENVX_QUIET"] = "1"  # Silences the '◇ injected env' stdout banner that breaks JSON-RPC
     
     server_params = StdioServerParameters(
-        command="api-evolution-mcp",
-        args=[],
+        command="npx",
+        args=["-y", "api-evolution-mcp-engine"],
         env=env
     )
     async with stdio_client(server_params) as (read, write):

@@ -1,14 +1,24 @@
 audit_api_drift_task:
   description: >
-    1. Use the Get Git Diff tool in the target path '{target_path}' (against base branch '{base_branch}') to find recently changed files.
-    2. Identify any modified backend endpoints or database models.
-    3. Read the relevant source files computationally and compare them against the current database schema via database_introspector.
-    4. Retrieve the live OpenAPI schema by strictly passing '{target_path}/server/openapi.json' as the openapiPath into the read_openapi_route tool.
-    5. Output a summary of any found discrepancies or missing updates.
+    Perform a 'Three-Way Architecture Audit' using the target path '{target_path}'. 
+    To ensure 100% accuracy and avoid hallucinations, you MUST follow this worksheet for every model (e.g. 'Item', 'Order'):
     
-    IMPORTANT: You MUST use '{target_path}' whenever a tool asks for `cwd` or `targetPath` (including openapiPath which must be exactly '{target_path}/server/openapi.json').
+    1. CODE vs DATABASE (First Truth): Verify Zod/models match physical DB columns.
+    2. CODE vs OPENAPI (Final Truth): Verify implementation matches the frontend contract.
+    3. OPENAPI vs DATABASE: Verify the contract reflects the physical data reality.
+    
+    To ensure 100% accuracy, you MUST follow this worksheet:
+       [Model Name] | Property in Code | Column in DB | Property in OpenAPI
+       --------------------------------------------------------------------
+    RULE 1: HIERARCHY OF TRUTH:
+       - DATABASE is the 'First Truth' (Physical reality).
+       - OPENAPI is the 'Final Truth' (Frontend contract).
+       - CODE (Zod/Schemas) is the bridge that must perfectly match BOTH.
+    RULE 2: Naming mismatches (e.g. `item_name` in DB vs `name` in OpenAPI) are [CRITICAL] 🚨.
+    RULE 3: Be extremely concise. Sacrifice grammar for the sake of concision. Provide exact facts and code.
   expected_output: >
-    A detailed "Drift Report" outlining exactly which endpoints were changed, if the Database schema matched, and if the OpenAPI specification was successfully updated. Include exact file paths.
+    A highly structured "Drift Report" using the SEVERITY levels [CRITICAL] 🚨, [WARNING], and [NOTICE]. 
+    For every [CRITICAL] drift, explicitly show the mismatch between Code, DB, and OpenAPI.
   agent: drift_analyzer
 
 map_frontend_impact_task:
