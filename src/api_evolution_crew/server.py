@@ -4,7 +4,15 @@ import subprocess
 from fastapi import FastAPI, Request
 from api_evolution_crew.main import run_repo_audit
 from github import Github, GithubIntegration, Auth
+import httpx
 
+async def post_to_dashboard(audit_payload: dict):
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post("http://localhost:3000/api/audits", json=audit_payload)
+    except Exception as e:
+        print(f"Dashboard update failed (non-critical): {e}")
+        
 app = FastAPI()
 
 @app.post("/webhook")
@@ -77,6 +85,25 @@ async def github_webhook(request: Request):
                     pr.create_issue_comment(f"## 🤖 API Evolution Audit\n\n{report_markdown}")
                     print("💬 Successfully posted Drift Report comment as the App Bot!")
                     
+                    # ADDING A DASHBOARD POSTING STEP
+                    await post_to_dashboard({
+                        "prNumber":    pr_number,
+                        "prTitle":     payload["pull_request"]["title"],
+                        "branch":      head_branch,
+                        "repo":        repo_full_name,
+                        "status":      "breaking" if "BREAKING" in report_markdown else
+                                    "warning"  if "WARNING"  in report_markdown else "clean",
+                        "driftReport": [],
+                        "blastRadius": [],
+                        "log": [
+                            f"PR #{pr_number} opened",
+                            "Repo cloned to ephemeral dir",
+                            "npm install + generate:docs done",
+                            "drift_analyzer started",
+                            "blast_radius_mapper started",
+                            f"Report posted to PR #{pr_number}"
+                        ]
+                    })
             except Exception as e:
                 print(f"❌ Failed to post to GitHub via App Auth: {e}")
         else:
