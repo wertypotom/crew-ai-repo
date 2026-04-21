@@ -4,6 +4,7 @@ import subprocess
 import urllib.request
 import json
 import asyncio
+import uuid
 from fastapi import APIRouter, Request, BackgroundTasks
 from api_evolution_crew.main import run_repo_audit
 from github import Github, GithubIntegration, Auth
@@ -11,6 +12,7 @@ from github import Github, GithubIntegration, Auth
 router = APIRouter()
 
 pr_locks = {}
+processed_shas = set()
 
 def notify_dashboard(data):
     try:
@@ -26,8 +28,9 @@ import sys
 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 class DashboardLogCatcher:
-    def __init__(self, pr_number, original_stdout):
+    def __init__(self, pr_number, run_id, original_stdout):
         self.pr_number = pr_number
+        self.run_id = run_id
         self.original_stdout = original_stdout
         self.buffer = ""
 
@@ -39,18 +42,19 @@ class DashboardLogCatcher:
         # Send the entire chunk as a single log item so multi-line ASCII art isn't broken
         clean_text = ansi_escape.sub('', text).strip('\r\n')
         if clean_text:
-            notify_dashboard({"prNumber": self.pr_number, "log": [clean_text]})
+            notify_dashboard({"runId": self.run_id, "prNumber": self.pr_number, "log": [clean_text]})
 
     def flush(self):
         self.original_stdout.flush()
 
-async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_branch, base_branch, head_sha, pr_url, pr_title):
+async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_branch, base_branch, head_sha, pr_url, pr_title, run_id):
     if pr_number not in pr_locks:
         pr_locks[pr_number] = asyncio.Lock()
         
     async with pr_locks[pr_number]:
         # Notify dashboard that we are starting, clearing old logs
         notify_dashboard({
+            "runId": run_id,
             "prNumber": pr_number,
             "prTitle": pr_title,
             "branch": head_branch,
@@ -73,7 +77,7 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
             
             # Intercept stdout to capture 100% of verbose CrewAI logs
             original_stdout = sys.stdout
-            catcher = DashboardLogCatcher(pr_number, original_stdout)
+            catcher = DashboardLogCatcher(pr_number, run_id, original_stdout)
             
             try:
                 sys.stdout = catcher
@@ -90,6 +94,7 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
             
             # Notify dashboard that we are done
             notify_dashboard({
+                "runId": run_id,
                 "prNumber": pr_number,
                 "status": "breaking" if has_critical else "clean",
                 "log": ["✅ Audit Complete!"],
@@ -97,8 +102,8 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
             })
             
             # Log into GitHub using App Authentication to post securely as a Bot!
-            app_id = os.environ.get("GITHUB_APP_ID")
-            pem_path = os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")
+            app_id = (os.environ.get("GITHUB_APP_ID") or "").strip().strip('"').strip("'")
+            pem_path = (os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH") or "").strip().strip('"').strip("'")
             
             if app_id and pem_path and os.path.exists(pem_path):
                 try:
@@ -109,6 +114,7 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
                     
                     installation_id = payload.get("installation", {}).get("id")
                     if installation_id:
+                        installation_id = int(installation_id)
                         g = gi.get_github_for_installation(installation_id)
                         repo = g.get_repo(repo_full_name)
                         pr = repo.get_pull(pr_number)
@@ -153,10 +159,24 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     pr_url = payload["pull_request"]["html_url"]
     pr_title = payload["pull_request"]["title"]
     
-    print(f"🚀 Received Webhook: {repo_full_name} PR #{pr_number} - Queued for background processing.")
+    # Ignore webhooks without an installation ID. 
+    # GitHub Apps send a "good" webhook with this ID; raw repo webhooks don't.
+    # Ignoring the "bad" one prevents double-execution.
+    installation_id = payload.get("installation", {}).get("id")
+    if not installation_id:
+        print(f"⏭️ Ignoring webhook for PR #{pr_number} - No GitHub App installation ID (likely a redundant repo webhook).")
+        return {"status": "Ignored - no installation ID"}
+
+    if head_sha in processed_shas:
+        print(f"⏭️ Skipping duplicate webhook for PR #{pr_number} - SHA {head_sha[:7]} already queued.")
+        return {"status": "Ignored - commit already processed"}
+    
+    processed_shas.add(head_sha)
+    
+    run_id = str(uuid.uuid4())
     
     background_tasks.add_task(
-        run_audit_task, payload, repo_full_name, clone_url, pr_number, head_branch, base_branch, head_sha, pr_url, pr_title
+        run_audit_task, payload, repo_full_name, clone_url, pr_number, head_branch, base_branch, head_sha, pr_url, pr_title, run_id
     )
     
     return {"status": "Queued", "repo": repo_full_name, "pr": pr_number}
