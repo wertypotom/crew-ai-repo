@@ -18,6 +18,7 @@ class ApiEvolutionCrew():
         return Agent(
             config=self.agents_config['drift_analyzer'],
             tools=[get_git_diff, read_source_file, database_introspector, read_openapi_route],
+            step_callback=getattr(self, 'custom_step_callback', None),
             verbose=True,
             max_iter=5
         )
@@ -27,6 +28,7 @@ class ApiEvolutionCrew():
         return Agent(
             config=self.agents_config['blast_radius_mapper'],
             tools=[get_dependency_graph, read_source_file],
+            step_callback=getattr(self, 'custom_step_callback', None),
             verbose=True
         )
 
