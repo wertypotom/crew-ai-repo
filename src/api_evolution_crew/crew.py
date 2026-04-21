@@ -50,6 +50,7 @@ class ApiEvolutionCrew():
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
+            step_callback=getattr(self, 'custom_step_callback', None),
             verbose=True,
             tracing=True,
         )

@@ -8,8 +8,11 @@ audit_api_drift_task:
     3. OPENAPI vs DATABASE: Verify the contract reflects the physical data reality.
     
     To ensure 100% accuracy, you MUST follow this worksheet:
-       [Model Name] | Property in Code | Column in DB | Property in OpenAPI
-       --------------------------------------------------------------------
+       a. EXTRACT FROM CODE: Use 'read_source_file' to read backend schemas (e.g. 'server/src/schemas.ts') EVEN IF they are not in the 'get_git_diff' output.
+       b. EXTRACT FROM DB: Use 'database_introspector'.
+       c. EXTRACT FROM OPENAPI: Use 'read_openapi_route'.
+       d. BUILD MATRIX: [Model Name] | Code Property | DB Column | OpenAPI Property
+    
     RULE 1: HIERARCHY OF TRUTH:
        - DATABASE is the 'First Truth' (Physical reality).
        - OPENAPI is the 'Final Truth' (Frontend contract).
@@ -24,8 +27,9 @@ audit_api_drift_task:
 map_frontend_impact_task:
   description: >
     1. Read the Drift Report from the Drift Analyzer to find the exact backend files that were modified.
-    2. Use the Get Dependency Graph tool (using cwd '{target_path}') to find all downstream frontend client files that import those modified backend files.
-    3. Use the Read Source File tool to investigate the logic inside those dependent frontend files. Will the backend change break their logic or type definitions?
+    2. MODULE GRAPH: Use the Get Dependency Graph tool (using cwd '{target_path}') to find all downstream frontend client files that import those modified backend files.
+    3. BUILD SCRIPTS: Dependency graphs miss CLI commands! You MUST use 'read_source_file' to read the frontend 'package.json' (e.g. 'client/package.json' or 'package.json'). Check if any scripts (like 'openapi-typescript') reference the modified backend files (e.g. 'openapi.json').
+    4. Use the Read Source File tool to investigate the logic inside any dependent files found in steps 2 and 3. Will the backend change break their logic, type definitions, or build scripts?
   expected_output: >
     An "Impact Report" detailing which frontend React components will break due to the backend changes. Provide the exact file paths and suggest specific code fixes for the frontend engineers.
     
