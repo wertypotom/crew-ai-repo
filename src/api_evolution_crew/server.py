@@ -6,6 +6,7 @@ from api_evolution_crew.main import run_repo_audit
 from github import Github, GithubIntegration, Auth
 import httpx
 
+#Added httpx for async HTTP requests to the dashboard
 async def post_to_dashboard(audit_payload: dict):
     try:
         async with httpx.AsyncClient() as client:
