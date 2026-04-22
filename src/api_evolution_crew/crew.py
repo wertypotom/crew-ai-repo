@@ -30,6 +30,14 @@ class ApiEvolutionCrew():
             verbose=True
         )
 
+    @agent
+    def architecture_fixer(self) -> Agent:
+        return Agent(
+            config=self.agents_config['architecture_fixer'],
+            tools=[read_source_file],
+            verbose=True
+        )
+
     @task
     def audit_api_drift_task(self) -> Task:
         return Task(
@@ -40,7 +48,12 @@ class ApiEvolutionCrew():
     def map_frontend_impact_task(self) -> Task:
         return Task(
             config=self.tasks_config['map_frontend_impact_task'],
-            context=[self.audit_api_drift_task()]
+        )
+
+    @task
+    def suggest_remediation_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['suggest_remediation_task'],
         )
 
     @crew

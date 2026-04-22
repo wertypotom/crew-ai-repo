@@ -1,32 +1,40 @@
 audit_api_drift_task:
   description: >
     Perform a 'Three-Way Architecture Audit' using the target path '{target_path}'. 
-    To ensure 100% accuracy and avoid hallucinations, you MUST follow this worksheet for every model (e.g. 'Item', 'Order'):
     
-    1. CODE vs DATABASE (First Truth): Verify Zod/models match physical DB columns.
-    2. CODE vs OPENAPI (Final Truth): Verify implementation matches the frontend contract.
-    3. OPENAPI vs DATABASE: Verify the contract reflects the physical data reality.
+    HIERARCHY OF TRUTH:
+      1. DATABASE (First Truth): The physical reality. Use 'database_introspector'.
+      2. OPENAPI (Final Truth): The external contract (found at 'server/openapi.json'). Use 'read_openapi_route'.
+      3. CODE (The Bridge): Backend schemas (e.g. 'server/src/schemas.ts'). Use 'read_source_file'.
     
-    To ensure 100% accuracy, you MUST follow this worksheet:
-       a. EXTRACT FROM CODE: Use 'read_source_file' to read backend schemas (e.g. 'server/src/schemas.ts') EVEN IF they are not in the 'get_git_diff' output.
-       b. EXTRACT FROM DB: Use 'database_introspector'.
-       c. EXTRACT FROM OPENAPI: Use 'read_openapi_route'.
-       d. BUILD MATRIX: [Model Name] | Code Property | DB Column | OpenAPI Property
+    To ensure 100% accuracy, you MUST build a comparison matrix for every model using a Markdown Table:
+    | Model | DB Column | OpenAPI Property | Code Property | Status |
+    | :--- | :--- | :--- | :--- | :--- |
     
-    RULE 1: HIERARCHY OF TRUTH:
-       - DATABASE is the 'First Truth' (Physical reality).
-       - OPENAPI is the 'Final Truth' (Frontend contract).
-       - CODE (Zod/Schemas) is the bridge that must perfectly match BOTH.
-    RULE 2: Naming mismatches (e.g. `item_name` in DB vs `name` in OpenAPI) are [CRITICAL] 🚨.
-    RULE 3: Be extremely concise. Sacrifice grammar for the sake of concision. Provide exact facts and code.
+    CRITICAL DRIFT RULES:
+       - Any naming mismatch (e.g. `item_name` vs `order_name`) is [CRITICAL] 🚨.
+       - Any missing field in ONE of the three sources is [CRITICAL] 🚨.
+    
+    TYPE COMPATIBILITY RULES (NOT CRITICAL):
+       - DB Numeric types (bigint, int, numeric) == OpenAPI 'number' == Code 'number' type.
+       - DB Date/Time types (timestamp, timestamptz, date) == OpenAPI 'string' == Code 'string' type.
+       - These mappings are expected cross-layer translations and should NOT be marked as [CRITICAL] 🚨.
+    
+    Be extremely concise. Sacrifice grammar for the sake of concision. Provide exact facts.
   expected_output: >
-    A highly structured "Drift Report" using the SEVERITY levels [CRITICAL] 🚨, [WARNING], and [NOTICE]. 
-    For every [CRITICAL] drift, explicitly show the mismatch between Code, DB, and OpenAPI.
+    A highly structured "Drift Report". 
+    If ANY [CRITICAL] naming or structural mismatches are found, you MUST start the report with the tag [DRIFT_DETECTED].
+    List each mismatch with the level [CRITICAL] 🚨.
   agent: drift_analyzer
 
 map_frontend_impact_task:
   description: >
-    1. Read the Drift Report from the Drift Analyzer to find the exact backend files that were modified.
+    You are given a Drift Report:
+    ---
+    {drift_report}
+    ---
+    
+    1. Analyze the Drift Report above to find the exact backend files that were modified or are inconsistent.
     2. MODULE GRAPH: Use the Get Dependency Graph tool (using cwd '{target_path}') to find all downstream frontend client files that import those modified backend files.
     3. BUILD SCRIPTS: Dependency graphs miss CLI commands! You MUST use 'read_source_file' to read the frontend 'package.json' (e.g. 'client/package.json' or 'package.json'). Check if any scripts (like 'openapi-typescript') reference the modified backend files (e.g. 'openapi.json').
     4. Use the Read Source File tool to investigate the logic inside any dependent files found in steps 2 and 3. Will the backend change break their logic, type definitions, or build scripts?
@@ -40,3 +48,21 @@ map_frontend_impact_task:
     - Use > blockquotes for critical warnings.
     - Omit conversational greetings.
   agent: blast_radius_mapper
+
+suggest_remediation_task:
+  description: >
+    Analyze the following Drift Report:
+    ---
+    {drift_report}
+    ---
+    
+    For every mismatch identified, provide the EXACT code change or SQL command to fix it.
+    Follow the HIERARCHY OF TRUTH:
+      - If DB and OpenAPI match, but CODE is different -> Update CODE.
+      - If CODE and DB match, but OpenAPI is different -> Update OpenAPI.
+      - If DB is the outlier -> Provide SQL migration to align DB to OpenAPI/Code.
+    
+    Format your output as a "Remediation Plan" with copy-pasteable blocks.
+  expected_output: >
+    A remediation plan with code/SQL blocks. Be extremely concise.
+  agent: architecture_fixer
