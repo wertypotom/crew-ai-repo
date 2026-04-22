@@ -78,14 +78,25 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
             print("⚙️ Preparing ephemeral repository...")
             server_path = os.path.join(temp_dir, "server")
             if os.path.exists(server_path):
-                subprocess.run(["npm", "install"], cwd=server_path, check=True)
+                print("📦 Installing server deps (npm ci)...")
+                subprocess.run(
+                    ["npm", "ci", "--prefer-offline", "--no-audit", "--no-fund"],
+                    cwd=server_path, check=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+                )
                 subprocess.run(["npm", "run", "generate:docs"], cwd=server_path, check=True)
             
             client_path = os.path.join(temp_dir, "client")
             if os.path.exists(client_path):
-                subprocess.run(["npm", "install"], cwd=client_path, check=True)
+                print("📦 Installing client deps (npm ci)...")
+                subprocess.run(
+                    ["npm", "ci", "--prefer-offline", "--no-audit", "--no-fund"],
+                    cwd=client_path, check=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+                )
                 subprocess.run(["npm", "run", "generate:api"], cwd=client_path, check=True)
                 print("✅ client/src/api/types.d.ts regenerated from current openapi.json")
+
             
             # Intercept stdout to capture 100% of verbose CrewAI logs
             original_stdout = sys.stdout
@@ -115,13 +126,19 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
             
             # Log into GitHub using App Authentication to post securely as a Bot!
             app_id = (os.environ.get("GITHUB_APP_ID") or "").strip().strip('"').strip("'")
-            pem_path = (os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH") or "").strip().strip('"').strip("'")
             
-            if app_id and pem_path and os.path.exists(pem_path):
-                try:
+            # Support both: raw key content via env var (Cloud Run) or file path (local/Render)
+            private_key = (os.environ.get("GITHUB_APP_PRIVATE_KEY") or "").strip()
+            if not private_key:
+                pem_path = (os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH") or "").strip().strip('"').strip("'")
+                if pem_path and os.path.exists(pem_path):
                     with open(pem_path, 'r') as f:
                         private_key = f.read()
+            
+            if app_id and private_key:
+                try:
                     auth = Auth.AppAuth(app_id, private_key)
+
                     gi = GithubIntegration(auth=auth)
                     
                     installation_id = payload.get("installation", {}).get("id")
