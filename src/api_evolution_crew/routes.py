@@ -14,13 +14,19 @@ router = APIRouter()
 pr_locks = {}
 processed_shas = set()
 
+@router.get("/ping")
+async def ping():
+    """Keep-alive endpoint for Render."""
+    return {"status": "alive"}
+
 def notify_dashboard(data):
+    dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:3000").rstrip("/")
     try:
-        req = urllib.request.Request("http://localhost:3000/api/audits", method="POST")
+        req = urllib.request.Request(f"{dashboard_url}/api/audits", method="POST")
         req.add_header('Content-Type', 'application/json')
-        urllib.request.urlopen(req, data=json.dumps(data).encode('utf-8'), timeout=2)
+        urllib.request.urlopen(req, data=json.dumps(data).encode('utf-8'), timeout=5)
     except Exception as e:
-        print(f"⚠️ Failed to notify dashboard: {e}")
+        print(f"⚠️ Failed to notify dashboard at {dashboard_url}: {e}")
 
 import re
 import sys
@@ -74,6 +80,12 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
             if os.path.exists(server_path):
                 subprocess.run(["npm", "install"], cwd=server_path, check=True)
                 subprocess.run(["npm", "run", "generate:docs"], cwd=server_path, check=True)
+            
+            client_path = os.path.join(temp_dir, "client")
+            if os.path.exists(client_path):
+                subprocess.run(["npm", "install"], cwd=client_path, check=True)
+                subprocess.run(["npm", "run", "generate:api"], cwd=client_path, check=True)
+                print("✅ client/src/api/types.d.ts regenerated from current openapi.json")
             
             # Intercept stdout to capture 100% of verbose CrewAI logs
             original_stdout = sys.stdout
