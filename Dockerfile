@@ -10,7 +10,8 @@ ENV UV_LINK_MODE=copy
 # Install the project's dependencies from the lockfile and pyproject.toml
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project --no-dev
+COPY src ./src
+RUN uv sync --frozen --no-dev
 
 # Final stage
 FROM python:3.12-slim-bookworm
@@ -30,6 +31,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Set PATH to use the virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/src"
 
 # Copy the rest of the application
 COPY . .
