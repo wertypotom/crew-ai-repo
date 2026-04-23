@@ -33,17 +33,36 @@ map_frontend_impact_task:
     ---
     {drift_report}
     ---
-    
-    1. Analyze the Drift Report above to find the exact backend files that were modified or are inconsistent.
-    2. MODULE GRAPH: Use the Get Dependency Graph tool (using cwd '{target_path}') to find all downstream frontend client files that import those modified backend files.
-    3. BUILD SCRIPTS: Dependency graphs miss CLI commands! You MUST use 'read_source_file' to read the frontend 'package.json' (e.g. 'client/package.json' or 'package.json'). Check if any scripts (like 'openapi-typescript') reference the modified backend files (e.g. 'openapi.json').
-    4. Use the Read Source File tool to investigate the logic inside any dependent files found in steps 2 and 3. Will the backend change break their logic, type definitions, or build scripts?
+
+    Your goal is to find every frontend file that uses the OLD (broken) field names from the Drift Report.
+
+    MANDATORY STEPS — execute all of them in order:
+
+    1. Extract the old field names from the Drift Report (e.g. 'price', 'item_name').
+
+    2. DIRECT FILE SEARCH (primary method — do NOT skip this):
+       - Use 'Read Source File' to read 'client/src/App.tsx' (cwd='{target_path}').
+       - Use 'Read Source File' to read ALL .tsx and .ts files under 'client/src/' that you can find.
+       - Scan each file's content for every old field name you extracted in step 1.
+       - A file is IMPACTED if it references ANY old field name (e.g. order.item_name, item.price).
+
+    3. GENERATED TYPES (secondary check):
+       - Use 'Read Source File' to read 'client/src/api/types.d.ts'.
+       - Verify the types now use the new field names. If not, this is also impacted.
+
+    4. BUILD SCRIPTS (tertiary check):
+       - Use 'Read Source File' to read 'client/package.json'.
+       - Check for openapi-typescript or similar scripts.
+
+    DO NOT rely solely on the dependency graph — openapi.json is a data file, not an ES module,
+    so import-based graph tools will always return empty for it.
   expected_output: >
-    An "Impact Report" detailing which frontend React components will break due to the backend changes. Provide the exact file paths and suggest specific code fixes for the frontend engineers.
-    
+    An "Impact Report" listing every impacted file with the EXACT lines that must change.
+    For each file, show the old line and the corrected line.
+
     FORMATTING RULES FOR PR COMMENT:
     - You MUST output beautiful GitHub Flavored Markdown (GFM).
-    - Use ````ts```` code blocks to show exact copy/paste diffs.
+    - Use ````ts```` code blocks to show exact before/after diffs.
     - Use Markdown Tables if listing multiple impacted files.
     - Use > blockquotes for critical warnings.
     - Omit conversational greetings.
@@ -66,3 +85,34 @@ suggest_remediation_task:
   expected_output: >
     A remediation plan with code/SQL blocks. Be extremely concise.
   agent: architecture_fixer
+
+apply_frontend_fixes_task:
+  description: >
+    You are given an Impact Report describing which frontend files are broken:
+    ---
+    {impact_report}
+    ---
+    The cloned repository root is at: {target_path}
+
+    For each broken file in the Impact Report:
+      1. Use 'Read Source File' to read the file's CURRENT content.
+         - cwd = '{target_path}'
+         - filePath = the relative path (e.g. 'client/src/App.tsx')
+      2. Identify ONLY the lines that reference the renamed/removed API fields.
+      3. Apply the MINIMAL fix (e.g. rename order.price -> order.item_price).
+      4. Use 'Write Source File' with the ABSOLUTE path:
+         absoluteFilePath = '{target_path}' + '/' + relative path
+         e.g. '{target_path}/client/src/App.tsx'
+      5. Confirm success by checking the return value from Write Source File.
+
+    DO NOT reformat files. DO NOT add imports unless absolutely required.
+    DO NOT change lines unrelated to the API contract change.
+  expected_output: >
+    A summary wrapped in [FIXED_FILES] tags listing each modified file.
+    Format:
+    [FIXED_FILES]
+    - client/src/App.tsx: renamed order.price -> order.item_price on line 42
+    [/FIXED_FILES]
+    If nothing needed changing: output [FIXED_FILES][/FIXED_FILES]
+  agent: frontend_code_fixer
+

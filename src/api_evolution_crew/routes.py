@@ -111,9 +111,8 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
                 
             print(f"✅ Audit Complete! Markdown length: {len(report_markdown)}")
             
-            # Pre-calculate critical status for dashboard and github
-            upper_report = report_markdown.upper()
-            has_critical = "[CRITICAL]" in upper_report or "CRITICAL:" in upper_report or "🚨" in report_markdown
+            # Determine PR status: only DRIFT_DETECTED is a true critical failure
+            has_critical = "[DRIFT_DETECTED]" in report_markdown
             
             # Notify dashboard that we are done
             notify_dashboard({
@@ -138,7 +137,6 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
             if app_id and private_key:
                 try:
                     auth = Auth.AppAuth(app_id, private_key)
-
                     gi = GithubIntegration(auth=auth)
                     
                     installation_id = payload.get("installation", {}).get("id")
@@ -148,6 +146,39 @@ async def run_audit_task(payload, repo_full_name, clone_url, pr_number, head_bra
                         repo = g.get_repo(repo_full_name)
                         pr = repo.get_pull(pr_number)
                         
+                        # --- Auto-fix: commit and push if the Code Fixer wrote any files ---
+                        if "[FIXED_FILES]" in report_markdown:
+                            try:
+                                print("🔀 Code Fixer wrote files — attempting git commit + push...")
+                                token_obj = gi.get_access_token(installation_id)
+                                token = token_obj.token
+                                authed_url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
+                                subprocess.run(["git", "remote", "set-url", "origin", authed_url], cwd=temp_dir, check=True)
+                                subprocess.run(["git", "config", "user.email", "bot@api-evolution.app"], cwd=temp_dir, check=True)
+                                subprocess.run(["git", "config", "user.name", "API Evolution Bot"], cwd=temp_dir, check=True)
+                                subprocess.run(["git", "add", "-A"], cwd=temp_dir, check=True)
+                                # Only commit if there are actual staged changes
+                                diff_check = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=temp_dir)
+                                if diff_check.returncode != 0:
+                                    subprocess.run(
+                                        ["git", "commit", "-m", "fix(bot): auto-apply frontend fixes [bot-fix]"],
+                                        cwd=temp_dir, check=True
+                                    )
+                                    subprocess.run(["git", "push", "origin", f"HEAD:{head_branch}"], cwd=temp_dir, check=True)
+                                    # Pre-register the new bot SHA so the webhook doesn't trigger a second audit
+                                    new_sha = subprocess.run(
+                                        ["git", "rev-parse", "HEAD"], cwd=temp_dir,
+                                        capture_output=True, text=True
+                                    ).stdout.strip()
+                                    processed_shas.add(new_sha)
+                                    print(f"✅ Bot commit pushed. New SHA {new_sha[:7]} pre-registered to skip re-audit.")
+                                    report_markdown += "\n\n> 🤖 **Auto-fix applied.** The bot has pushed corrected frontend files to this branch."
+                                else:
+                                    print("ℹ️ [FIXED_FILES] tag present but no git diff — agent wrote identical content, skipping commit.")
+                            except Exception as push_err:
+                                print(f"⚠️ Auto-fix push failed: {push_err}")
+                                report_markdown += f"\n\n> ⚠️ Auto-fix could not be pushed: `{push_err}`. Apply manually."
+
                         pr.create_issue_comment(f"## 🤖 API Evolution Audit\n\n{report_markdown}")
                         print("💬 Successfully posted Drift Report comment as the App Bot!")
                         

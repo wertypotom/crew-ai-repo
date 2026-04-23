@@ -58,10 +58,23 @@ def run_repo_audit(target_dir: str, base_branch: str, step_callback=None) -> str
         tasks=[crew_builder.map_frontend_impact_task()],
         verbose=True
     )
-    # Pass the drift report as context for the second crew
     inputs['drift_report'] = drift_report
-    final_result = impact_crew.kickoff(inputs=inputs)
+    impact_result = impact_crew.kickoff(inputs=inputs)
+    impact_report = str(impact_result.raw if hasattr(impact_result, 'raw') else impact_result)
     
-    return str(final_result.raw if hasattr(final_result, 'raw') else final_result)
+    # STEP 4: Auto-fix broken frontend files
+    print("🔧 Step 3: Applying Frontend Code Fixes...")
+    fix_crew = Crew(
+        agents=[crew_builder.frontend_code_fixer()],
+        tasks=[crew_builder.apply_frontend_fixes_task()],
+        verbose=True
+    )
+    inputs['impact_report'] = impact_report
+    fix_result = fix_crew.kickoff(inputs=inputs)
+    fix_summary = str(fix_result.raw if hasattr(fix_result, 'raw') else fix_result)
+
+    # Return both the human-readable impact report AND the machine-parseable fix summary
+    # routes.py looks for [FIXED_FILES] to decide whether to git commit + push
+    return f"{impact_report}\n\n---\n{fix_summary}"
 
 

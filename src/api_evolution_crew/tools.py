@@ -1,4 +1,5 @@
 import asyncio
+import os as _os
 from crewai.tools import tool
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -53,3 +54,16 @@ def read_openapi_route(cwd: str, openapiPath: str, routePath: str, method: str) 
         "routePath": routePath, 
         "method": method
     }))
+
+@tool("Write Source File")
+def write_source_file_local(absoluteFilePath: str, content: str) -> str:
+    """Overwrite a file at an absolute path with new content. Only use within the cloned repo temp dir.
+    The absoluteFilePath must be a full path, e.g. /tmp/xyz/client/src/App.tsx.
+    After writing, returns the number of bytes written so you can confirm success."""
+    try:
+        _os.makedirs(_os.path.dirname(absoluteFilePath), exist_ok=True)
+        with open(absoluteFilePath, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return f"✅ Wrote {len(content.encode('utf-8'))} bytes to {absoluteFilePath}"
+    except Exception as e:
+        return f"❌ Failed to write file: {e}"
